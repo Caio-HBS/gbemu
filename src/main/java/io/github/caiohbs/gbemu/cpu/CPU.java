@@ -27,7 +27,7 @@ public class CPU {
 
     public void init() {
         cpuRegisters.setProgramCounter(0x100); // Cartridge entrypoint
-        cpuRegisters.setA(0x01);
+        cpuRegisters.setA(0x01);               // Default value for A
     }
 
     private void fetchInstruction() {
@@ -45,6 +45,8 @@ public class CPU {
         }
 
         switch (currInstruction.getAddressMode()) {
+            case AM_NONE:
+                return;
             case AM_IMP:
                 return;
             case AM_R_D16:
@@ -98,16 +100,40 @@ public class CPU {
             case AM_R_A16:
                 return; // TODO
             default:
-                System.out.println(
-                        "Unknown Address Mode! " + currInstruction.getAddressMode() + " (" + currOpcode + ")"
-                );
+                System.out.println("Unknown Address Mode! " + currInstruction.getAddressMode() + " (" + currOpcode + ")");
                 System.exit(-7);
         }
 
     }
 
     private void execute() {
-        System.out.println("    Not executing yet");
+        switch (currInstruction.getInstructionType()) {
+            case IN_NONE:
+                System.out.println("INVALID INSTRUCTION!");
+                System.exit(-7);
+            case IN_NOP:
+                break;
+            case IN_LD:
+                // TODO
+                break;
+            case IN_JP:
+                if (checkCondition()) {
+                    cpuRegisters.setProgramCounter(fetchedData);
+                    emulator.cycle(1);
+                }
+                break;
+            case IN_DI:
+                isInterruptMasterEnabled = false;
+                break;
+            case IN_XOR:
+                cpuRegisters.setA(cpuRegisters.getA() ^ (fetchedData & 0xFF));
+                setFlags((cpuRegisters.getA() == 0 ? 1 : 0), 0, 0, 0);
+                break;
+
+            default:
+                System.out.println("Instruction not implemented: " + currInstruction.getInstructionType());
+                System.exit(-7);
+        }
     }
 
 
@@ -118,12 +144,19 @@ public class CPU {
             fetchInstruction();
             fetchData();
 
-            System.out.printf("Executing instruction: %X    PC: %X%n", currOpcode, pc);
-
             if (currInstruction == null) {
-                System.out.printf("    Unknown Instruction! %X%n", currOpcode);
+                System.out.printf("%04X: %-7s (%02X %02X %02X) A: %02X | B: %02X | C: %02X\n", pc,
+                        "<UNKNOWN>", currOpcode, bus.cartridge.read(pc + 1),
+                        bus.cartridge.read(pc + 2), cpuRegisters.getA(), cpuRegisters.getB(), cpuRegisters.getC()
+                );
+                System.out.printf("    Unknown Instruction! %02X%n", currOpcode);
                 System.exit(-7);
             }
+
+            System.out.printf("%04X: %-7s (%02X %02X %02X) A: %02X | B: %02X | C: %02X\n", pc,
+                    currInstruction.getInstructionType().getName(), currOpcode, bus.cartridge.read(pc + 1),
+                    bus.cartridge.read(pc + 2), cpuRegisters.getA(), cpuRegisters.getB(), cpuRegisters.getC()
+            );
 
             execute();
         }
@@ -149,6 +182,50 @@ public class CPU {
             case RT_PC -> cpuRegisters.getProgramCounter();
             default -> 0;
         };
+    }
+
+    private boolean checkCondition() {
+        boolean z = (cpuRegisters.getF() & 0x80) != 0;
+        boolean c = (cpuRegisters.getF() & 0x10) != 0;
+
+        return switch (currInstruction.getConditionType()) {
+            case CT_NONE -> true;
+            case CT_C -> c;
+            case CT_NC -> !c;
+            case CT_Z -> z;
+            case CT_NZ -> !z;
+        };
+    }
+
+    private void setFlags(int z, int n, int h, int c) {
+        if (z != -1) {
+            if (z != 0) {
+                cpuRegisters.setF(cpuRegisters.getF() | (1 << 7));
+            } else {
+                cpuRegisters.setF(cpuRegisters.getF() & ~(1 << 7));
+            }
+        }
+        if (n != -1) {
+            if (n != 0) {
+                cpuRegisters.setF(cpuRegisters.getF() | (1 << 6));
+            } else {
+                cpuRegisters.setF(cpuRegisters.getF() & ~(1 << 6));
+            }
+        }
+        if (h != -1) {
+            if (h != 0) {
+                cpuRegisters.setF(cpuRegisters.getF() | (1 << 5));
+            } else {
+                cpuRegisters.setF(cpuRegisters.getF() & ~(1 << 5));
+            }
+        }
+        if (c != -1) {
+            if (c != 0) {
+                cpuRegisters.setF(cpuRegisters.getF() | (1 << 4));
+            } else {
+                cpuRegisters.setF(cpuRegisters.getF() & ~(1 << 4));
+            }
+        }
     }
 
 }

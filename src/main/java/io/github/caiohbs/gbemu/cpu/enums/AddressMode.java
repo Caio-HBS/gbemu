@@ -1,6 +1,7 @@
 package io.github.caiohbs.gbemu.cpu.enums;
 
 public enum AddressMode {
+    AM_NONE,
     AM_IMP,
     AM_R_D16,
     AM_R_R,
