@@ -1,11 +1,13 @@
 package io.github.caiohbs.gbemu.memory;
 
+import io.github.caiohbs.gbemu.cartridge.Cartridge;
+
 public class Bus {
 
-    byte read(int address) {
-        return 0;
-    }
+    public final Cartridge cartridge;
 
-    void write(int address, byte value) {}
+    public Bus(Cartridge cartridge) {
+        this.cartridge = cartridge;
+    }
 
 }
