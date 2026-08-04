@@ -54,16 +54,33 @@ public class Cartridge {
 
     public int read(int address) {
         if (address > 0x8000) {
-            System.out.println("Not yet implemented!");
+            System.out.printf("UNSUPPORTED BUS read(%04X)\n", address);
             System.exit(-3);
         }
 
         return romData[address] & 0xFF;
     }
 
-    public void write(int address, byte value) {
-        System.out.println("Not yet implemented!");
-        System.exit(-3);
+    public void write(int address, int value) {
+        if (address > 0x8000) {
+            System.out.printf("UNSUPPORTED BUS write(%04X)\n", address);
+            System.exit(-3);
+        }
+
+        System.out.printf("BUS write(%04X) -> %02X\n", address, value);
+
+    }
+
+    public int read16(int address) {
+        int high = read(address);
+        int low = read(address + 1);
+
+        return low | (high << 8);
+    }
+
+    public void write16(int address, int value) {
+        write(address + 1, (value >> 8) & 0xFF);
+        write(address, value & 0xFF);
     }
 
 }
