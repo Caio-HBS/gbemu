@@ -5,6 +5,9 @@ import io.github.caiohbs.gbemu.cpu.mappers.InstructionsByOpcode;
 import io.github.caiohbs.gbemu.emulator.Emulator;
 import io.github.caiohbs.gbemu.memory.Bus;
 
+import static io.github.caiohbs.gbemu.cpu.enums.AddressMode.*;
+import static io.github.caiohbs.gbemu.cpu.enums.RegisterType.*;
+
 public class CPU {
 
     private final Bus bus;
@@ -45,41 +48,82 @@ public class CPU {
         }
 
         switch (currInstruction.getAddressMode()) {
-            case AM_NONE:
+            case AM_NONE, AM_IMP:
                 return;
-            case AM_IMP:
-                return;
-            case AM_R_D16:
-                return; // TODO
-            case AM_R_R:
-                return; // TODO
+
             case AM_MR_R:
-                return; // TODO
-            case AM_R_MR:
-                return; // TODO
-            case AM_R_HLI:
-                return; // TODO
-            case AM_R_HLD:
-                return; // TODO
-            case AM_HLI_R:
-                return; // TODO
-            case AM_HLD_R:
-                return; // TODO
-            case AM_R_A8:
-                return; // TODO
-            case AM_A8_R:
-                return; // TODO
-            case AM_HL_SPR:
-                return; // TODO
-            case AM_R:
-                fetchedData = readRegister(currInstruction.getRegisterType1());
+                fetchedData = readRegister(currInstruction.getRegisterType2());
+                memoryDestination = readRegister(currInstruction.getRegisterType1());
+                isDestMemory = true;
+
+                if (currInstruction.getRegisterType1() == RT_HL) {
+                    memoryDestination |= 0xFF00;
+                }
+
                 return;
-            case AM_R_D8:
+
+            case AM_R_MR:
+                int address = readRegister(currInstruction.getRegisterType2());
+
+                if (currInstruction.getRegisterType2() == RT_C) {
+                    address |= 0xFF00;
+                }
+
+                fetchedData = bus.cartridge.read(address);
+                emulator.cycle(1);
+
+                return;
+
+            case AM_R_HLI:
+                fetchedData = readRegister(currInstruction.getRegisterType2());
+                emulator.cycle(1);
+                setRegister(RT_HL, readRegister(RT_HL) + 1);
+
+                return;
+
+            case AM_R_HLD:
+                fetchedData = readRegister(currInstruction.getRegisterType2());
+                emulator.cycle(1);
+                setRegister(RT_HL, readRegister(RT_HL) - 1);
+
+                return;
+
+            case AM_HLI_R:
+                fetchedData = readRegister(currInstruction.getRegisterType2());
+                memoryDestination = readRegister(currInstruction.getRegisterType1());
+                isDestMemory = true;
+                setRegister(RT_HL, readRegister(RT_HL) + 1);
+
+                return;
+
+            case AM_HLD_R:
+                fetchedData = readRegister(currInstruction.getRegisterType2());
+                memoryDestination = readRegister(currInstruction.getRegisterType1());
+                isDestMemory = true;
+                setRegister(RT_HL, readRegister(RT_HL) - 1);
+
+                return;
+
+            case AM_R_A8, AM_HL_SPR, AM_R_D8, AM_D8:
                 fetchedData = bus.cartridge.read(cpuRegisters.getProgramCounter());
                 emulator.cycle(1);
                 cpuRegisters.setProgramCounter(cpuRegisters.getProgramCounter() + 1);
+
                 return;
-            case AM_D16:
+
+            case AM_A8_R:
+                memoryDestination = bus.cartridge.read(cpuRegisters.getProgramCounter()) | 0xFF00;
+                isDestMemory = true;
+                emulator.cycle(1);
+                cpuRegisters.setProgramCounter(cpuRegisters.getProgramCounter() + 1);
+
+                return;
+
+            case AM_R_R, AM_R:
+                fetchedData = readRegister(currInstruction.getRegisterType1());
+                return;
+
+            case AM_R_D16, AM_D16:
                 int low = bus.cartridge.read(cpuRegisters.getProgramCounter());
                 emulator.cycle(1);
                 int high = bus.cartridge.read(cpuRegisters.getProgramCounter() + 1);
@@ -87,18 +131,53 @@ public class CPU {
                 fetchedData = low | (high << 8);
                 cpuRegisters.setProgramCounter(cpuRegisters.getProgramCounter() + 2);
                 return;
-            case AM_D8:
-                return; // TODO
-            case AM_D16_R:
-                return; // TODO
+
+            case AM_D16_R, AM_A16_R:
+                int low2 = bus.cartridge.read(cpuRegisters.getProgramCounter());
+                emulator.cycle(1);
+
+                int high2 = bus.cartridge.read(cpuRegisters.getProgramCounter() + 1);
+                emulator.cycle(1);
+                memoryDestination = low2 | (high2 << 8);
+                isDestMemory = true;
+
+                cpuRegisters.setProgramCounter(cpuRegisters.getProgramCounter() + 2);
+                fetchedData = readRegister(currInstruction.getRegisterType2());
+
+                return;
+
             case AM_MR_D8:
-                return; // TODO
+                fetchedData = bus.cartridge.read(cpuRegisters.getProgramCounter());
+                emulator.cycle(1);
+                cpuRegisters.setProgramCounter(cpuRegisters.getProgramCounter() + 1);
+                memoryDestination = readRegister(currInstruction.getRegisterType1());
+                isDestMemory = true;
+
+                return;
+
             case AM_MR:
-                return; // TODO
-            case AM_A16_R:
-                return; // TODO
+                memoryDestination = readRegister(currInstruction.getRegisterType1());
+                isDestMemory = true;
+                fetchedData = bus.cartridge.read(readRegister(currInstruction.getRegisterType1()));
+                emulator.cycle(1);
+
+                return;
+
             case AM_R_A16:
-                return; // TODO
+                int low3 = bus.cartridge.read(cpuRegisters.getProgramCounter());
+                emulator.cycle(1);
+
+                int high3 = bus.cartridge.read(cpuRegisters.getProgramCounter() + 1);
+                emulator.cycle(1);
+
+                int address3 = low3 | (high3 << 8);
+
+                cpuRegisters.setProgramCounter(cpuRegisters.getProgramCounter() + 2);
+                fetchedData = bus.cartridge.read(address3);
+                emulator.cycle(1);
+
+                return;
+
             default:
                 System.out.println("Unknown Address Mode! " + currInstruction.getAddressMode() + " (" + currOpcode + ")");
                 System.exit(-7);
@@ -114,8 +193,41 @@ public class CPU {
             case IN_NOP:
                 break;
             case IN_LD:
-                // TODO
-                break;
+                if (isDestMemory) {
+                    if (
+                            currInstruction.getRegisterType2() == RT_AF ||
+                            currInstruction.getRegisterType2() == RT_BC ||
+                            currInstruction.getRegisterType2() == RT_DE ||
+                            currInstruction.getRegisterType2() == RT_HL ||
+                            currInstruction.getRegisterType2() == RT_SP ||
+                            currInstruction.getRegisterType2() == RT_PC
+                    ) {
+                        emulator.cycle(1);
+                        bus.cartridge.write16(memoryDestination, fetchedData);
+                    } else {
+                        bus.cartridge.write(memoryDestination, fetchedData);
+                    }
+                    return;
+                }
+
+                if (currInstruction.getAddressMode() == AM_HL_SPR) {
+                    int hflag = (
+                                        readRegister(currInstruction.getRegisterType2()) & 0xF) + (fetchedData & 0xF
+                                ) >= 0x10 ? 1 : 0;
+                    int cflag = (
+                                        readRegister(currInstruction.getRegisterType2()) & 0xFF) + (fetchedData & 0xFF
+                                ) >= 0x100 ? 1 : 0;
+
+                    setFlags(0, 0, hflag, cflag);
+                    setRegister(
+                            currInstruction.getRegisterType1(),
+                            readRegister(currInstruction.getRegisterType2()) + fetchedData
+                    );
+                    return;
+                }
+
+                setRegister(currInstruction.getRegisterType1(), fetchedData);
+
             case IN_JP:
                 if (checkCondition()) {
                     cpuRegisters.setProgramCounter(fetchedData);
@@ -182,6 +294,41 @@ public class CPU {
             case RT_PC -> cpuRegisters.getProgramCounter();
             default -> 0;
         };
+    }
+
+    private void setRegister(RegisterType registerType, int value) {
+        switch (registerType) {
+            case RT_NONE -> {
+                return;
+            }
+            case RT_A -> cpuRegisters.setA(value & 0xFF);
+            case RT_F -> cpuRegisters.setF(value & 0xFF);
+            case RT_B -> cpuRegisters.setB(value & 0xFF);
+            case RT_C -> cpuRegisters.setC(value & 0xFF);
+            case RT_D -> cpuRegisters.setD(value & 0xFF);
+            case RT_E -> cpuRegisters.setE(value & 0xFF);
+            case RT_H -> cpuRegisters.setH(value & 0xFF);
+            case RT_L -> cpuRegisters.setL(value & 0xFF);
+            case RT_AF -> {
+                cpuRegisters.setA((value >> 8) & 0xFF);
+                cpuRegisters.setF(value & 0xFF);
+            }
+            case RT_BC -> {
+                cpuRegisters.setB((value >> 8) & 0xFF);
+                cpuRegisters.setC(value & 0xFF);
+            }
+            case RT_DE -> {
+                cpuRegisters.setD((value >> 8) & 0xFF);
+                cpuRegisters.setE(value & 0xFF);
+            }
+            case RT_HL -> {
+                cpuRegisters.setH((value >> 8) & 0xFF);
+                cpuRegisters.setL(value & 0xFF);
+            }
+            case RT_PC -> cpuRegisters.setProgramCounter(value);
+            case RT_SP -> cpuRegisters.setStackPointer(value);
+            default -> System.out.println("Invalid register type: " + registerType);
+        }
     }
 
     private boolean checkCondition() {
