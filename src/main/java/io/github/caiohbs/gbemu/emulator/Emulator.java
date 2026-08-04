@@ -2,11 +2,13 @@ package io.github.caiohbs.gbemu.emulator;
 
 import io.github.caiohbs.gbemu.cartridge.Cartridge;
 import io.github.caiohbs.gbemu.cpu.CPU;
+import io.github.caiohbs.gbemu.memory.Bus;
 
 public class Emulator {
 
     private final Cartridge cartridge = new Cartridge();
-    private final CPU cpu = new CPU();
+    private final Bus bus = new Bus(cartridge);
+    private final CPU cpu = new CPU(bus, this);
 
     public void emuRun(String[] args) {
         if (args.length < 2) {
@@ -20,12 +22,12 @@ public class Emulator {
 
         cpu.init();
 
-        boolean running = true;
-        boolean paused = false;
+        boolean isRunning = true;
+        boolean isPaused = false;
         long ticks = 0;
 
-        while (running) {
-            if (paused) {
+        while (isRunning) {
+            if (isPaused) {
                 delay(1000);
                 continue;
             }
@@ -47,6 +49,9 @@ public class Emulator {
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
+    }
+
+    public void cycle(int cycle) {
     }
 
 }

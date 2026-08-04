@@ -52,4 +52,18 @@ public class Cartridge {
         return true;
     }
 
+    public int read(int address) {
+        if (address > 0x8000) {
+            System.out.println("Not yet implemented!");
+            System.exit(-3);
+        }
+
+        return romData[address] & 0xFF;
+    }
+
+    public void write(int address, byte value) {
+        System.out.println("Not yet implemented!");
+        System.exit(-3);
+    }
+
 }
