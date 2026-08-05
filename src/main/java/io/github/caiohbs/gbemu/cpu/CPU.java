@@ -227,6 +227,7 @@ public class CPU {
                 }
 
                 setRegister(currInstruction.getRegisterType1(), fetchedData);
+                break;
 
             case IN_JP:
                 if (checkCondition()) {
