@@ -275,7 +275,6 @@ public class CPU {
                         cpuRegisters.getB(), cpuRegisters.getC(), cpuRegisters.getD(), cpuRegisters.getE(),
                         cpuRegisters.getH(), cpuRegisters.getC()
                 );
-                System.out.printf("    Unknown Instruction! %02X%n", currOpcode);
                 System.exit(-7);
             }
 
