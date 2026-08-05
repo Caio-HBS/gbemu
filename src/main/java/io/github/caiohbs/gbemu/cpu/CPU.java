@@ -34,7 +34,7 @@ public class CPU {
     }
 
     private void fetchInstruction() {
-        currOpcode = bus.cartridge.read(cpuRegisters.getProgramCounter());
+        currOpcode = bus.read(cpuRegisters.getProgramCounter());
         cpuRegisters.setProgramCounter(cpuRegisters.getProgramCounter() + 1);
         currInstruction = InstructionsByOpcode.get(currOpcode);
     }
@@ -69,7 +69,7 @@ public class CPU {
                     address |= 0xFF00;
                 }
 
-                fetchedData = bus.cartridge.read(address);
+                fetchedData = bus.read(address);
                 emulator.cycle(1);
 
                 return;
@@ -105,14 +105,14 @@ public class CPU {
                 return;
 
             case AM_R_A8, AM_HL_SPR, AM_R_D8, AM_D8:
-                fetchedData = bus.cartridge.read(cpuRegisters.getProgramCounter());
+                fetchedData = bus.read(cpuRegisters.getProgramCounter());
                 emulator.cycle(1);
                 cpuRegisters.setProgramCounter(cpuRegisters.getProgramCounter() + 1);
 
                 return;
 
             case AM_A8_R:
-                memoryDestination = bus.cartridge.read(cpuRegisters.getProgramCounter()) | 0xFF00;
+                memoryDestination = bus.read(cpuRegisters.getProgramCounter()) | 0xFF00;
                 isDestMemory = true;
                 emulator.cycle(1);
                 cpuRegisters.setProgramCounter(cpuRegisters.getProgramCounter() + 1);
@@ -124,19 +124,19 @@ public class CPU {
                 return;
 
             case AM_R_D16, AM_D16:
-                int low = bus.cartridge.read(cpuRegisters.getProgramCounter());
+                int low = bus.read(cpuRegisters.getProgramCounter());
                 emulator.cycle(1);
-                int high = bus.cartridge.read(cpuRegisters.getProgramCounter() + 1);
+                int high = bus.read(cpuRegisters.getProgramCounter() + 1);
                 emulator.cycle(1);
                 fetchedData = low | (high << 8);
                 cpuRegisters.setProgramCounter(cpuRegisters.getProgramCounter() + 2);
                 return;
 
             case AM_D16_R, AM_A16_R:
-                int low2 = bus.cartridge.read(cpuRegisters.getProgramCounter());
+                int low2 = bus.read(cpuRegisters.getProgramCounter());
                 emulator.cycle(1);
 
-                int high2 = bus.cartridge.read(cpuRegisters.getProgramCounter() + 1);
+                int high2 = bus.read(cpuRegisters.getProgramCounter() + 1);
                 emulator.cycle(1);
                 memoryDestination = low2 | (high2 << 8);
                 isDestMemory = true;
@@ -147,7 +147,7 @@ public class CPU {
                 return;
 
             case AM_MR_D8:
-                fetchedData = bus.cartridge.read(cpuRegisters.getProgramCounter());
+                fetchedData = bus.read(cpuRegisters.getProgramCounter());
                 emulator.cycle(1);
                 cpuRegisters.setProgramCounter(cpuRegisters.getProgramCounter() + 1);
                 memoryDestination = readRegister(currInstruction.getRegisterType1());
@@ -158,22 +158,22 @@ public class CPU {
             case AM_MR:
                 memoryDestination = readRegister(currInstruction.getRegisterType1());
                 isDestMemory = true;
-                fetchedData = bus.cartridge.read(readRegister(currInstruction.getRegisterType1()));
+                fetchedData = bus.read(readRegister(currInstruction.getRegisterType1()));
                 emulator.cycle(1);
 
                 return;
 
             case AM_R_A16:
-                int low3 = bus.cartridge.read(cpuRegisters.getProgramCounter());
+                int low3 = bus.read(cpuRegisters.getProgramCounter());
                 emulator.cycle(1);
 
-                int high3 = bus.cartridge.read(cpuRegisters.getProgramCounter() + 1);
+                int high3 = bus.read(cpuRegisters.getProgramCounter() + 1);
                 emulator.cycle(1);
 
                 int address3 = low3 | (high3 << 8);
 
                 cpuRegisters.setProgramCounter(cpuRegisters.getProgramCounter() + 2);
-                fetchedData = bus.cartridge.read(address3);
+                fetchedData = bus.read(address3);
                 emulator.cycle(1);
 
                 return;
@@ -190,8 +190,10 @@ public class CPU {
             case IN_NONE:
                 System.out.println("INVALID INSTRUCTION!");
                 System.exit(-7);
+
             case IN_NOP:
                 break;
+
             case IN_LD:
                 if (isDestMemory) {
                     if (
@@ -203,13 +205,13 @@ public class CPU {
                             currInstruction.getRegisterType2() == RT_PC
                     ) {
                         emulator.cycle(1);
-                        bus.cartridge.write16(memoryDestination, fetchedData);
+                        bus.write16(memoryDestination, fetchedData);
                     } else {
-                        bus.cartridge.write(memoryDestination, fetchedData);
+                        bus.write(memoryDestination, fetchedData);
                     }
+                    emulator.cycle(1);
                     return;
                 }
-
                 if (currInstruction.getAddressMode() == AM_HL_SPR) {
                     int hflag = (
                                         readRegister(currInstruction.getRegisterType2()) & 0xF) + (fetchedData & 0xF
@@ -235,9 +237,19 @@ public class CPU {
                     emulator.cycle(1);
                 }
                 break;
+
+            case IN_LDH:
+                if (currInstruction.getRegisterType1() == RT_A) {
+                    setRegister(currInstruction.getRegisterType1(), bus.read(0xFF00 | fetchedData));
+                } else {
+                    bus.write(0xFF00 | fetchedData, cpuRegisters.getA());
+                }
+                emulator.cycle(1);
+
             case IN_DI:
                 isInterruptMasterEnabled = false;
                 break;
+
             case IN_XOR:
                 cpuRegisters.setA(cpuRegisters.getA() ^ (fetchedData & 0xFF));
                 setFlags((cpuRegisters.getA() == 0 ? 1 : 0), 0, 0, 0);
@@ -258,17 +270,19 @@ public class CPU {
             fetchData();
 
             if (currInstruction == null) {
-                System.out.printf("%04X: %-7s (%02X %02X %02X) A: %02X | B: %02X | C: %02X\n", pc,
-                        "<UNKNOWN>", currOpcode, bus.cartridge.read(pc + 1),
-                        bus.cartridge.read(pc + 2), cpuRegisters.getA(), cpuRegisters.getB(), cpuRegisters.getC()
+                System.out.printf("%04X: %-7s (%02X %02X %02X) A: %02X | BC: %02X%02X | DE: %02X%02X | HL: %02X%02X\n",
+                        pc, "<NONE>", currOpcode, bus.read(pc + 1), bus.read(pc + 2), cpuRegisters.getA(),
+                        cpuRegisters.getB(), cpuRegisters.getC(), cpuRegisters.getD(), cpuRegisters.getE(),
+                        cpuRegisters.getH(), cpuRegisters.getC()
                 );
                 System.out.printf("    Unknown Instruction! %02X%n", currOpcode);
                 System.exit(-7);
             }
 
-            System.out.printf("%04X: %-7s (%02X %02X %02X) A: %02X | B: %02X | C: %02X\n", pc,
-                    currInstruction.getInstructionType().getName(), currOpcode, bus.cartridge.read(pc + 1),
-                    bus.cartridge.read(pc + 2), cpuRegisters.getA(), cpuRegisters.getB(), cpuRegisters.getC()
+            System.out.printf("%04X: %-7s (%02X %02X %02X) A: %02X | BC: %02X%02X | DE: %02X%02X | HL: %02X%02X\n", pc,
+                    currInstruction.getInstructionType().getName(), currOpcode, bus.read(pc + 1),
+                    bus.read(pc + 2), cpuRegisters.getA(), cpuRegisters.getB(), cpuRegisters.getC(),
+                    cpuRegisters.getD(), cpuRegisters.getE(), cpuRegisters.getH(), cpuRegisters.getC()
             );
 
             execute();
@@ -300,7 +314,6 @@ public class CPU {
     private void setRegister(RegisterType registerType, int value) {
         switch (registerType) {
             case RT_NONE -> {
-                return;
             }
             case RT_A -> cpuRegisters.setA(value & 0xFF);
             case RT_F -> cpuRegisters.setF(value & 0xFF);
