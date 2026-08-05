@@ -3,11 +3,13 @@ package io.github.caiohbs.gbemu.emulator;
 import io.github.caiohbs.gbemu.cartridge.Cartridge;
 import io.github.caiohbs.gbemu.cpu.CPU;
 import io.github.caiohbs.gbemu.memory.Bus;
+import io.github.caiohbs.gbemu.memory.RAM;
 
 public class Emulator {
 
     private final Cartridge cartridge = new Cartridge();
-    private final Bus bus = new Bus(cartridge);
+    private final RAM ram = new RAM();
+    private final Bus bus = new Bus(cartridge, ram);
     private final CPU cpu = new CPU(bus, this);
 
     public void emuRun(String[] args) {
