@@ -6,14 +6,16 @@ import io.github.caiohbs.gbemu.emulator.Emulator;
 import io.github.caiohbs.gbemu.memory.Bus;
 
 import static io.github.caiohbs.gbemu.cpu.enums.AddressMode.*;
+import static io.github.caiohbs.gbemu.cpu.enums.ConditionType.*;
 import static io.github.caiohbs.gbemu.cpu.enums.RegisterType.*;
 
 public class CPU {
 
     private final Bus bus;
     private final Emulator emulator;
+    private final Stack stack;
 
-    CPURegisters cpuRegisters = new CPURegisters();
+    private final CPURegisters cpuRegisters;
     int fetchedData;
     int memoryDestination;
     boolean isDestMemory;
@@ -23,9 +25,15 @@ public class CPU {
     boolean isStepping;
     boolean isInterruptMasterEnabled;
 
-    public CPU(Bus bus, Emulator emulator) {
+    public CPU(Bus bus, Emulator emulator, CPURegisters cpuRegisters, Stack stack) {
         this.bus = bus;
         this.emulator = emulator;
+        this.cpuRegisters = cpuRegisters;
+        this.stack = stack;
+    }
+
+    public CPURegisters getCpuRegisters() {
+        return cpuRegisters;
     }
 
     public void init() {
@@ -56,7 +64,7 @@ public class CPU {
                 memoryDestination = readRegister(currInstruction.getRegisterType1());
                 isDestMemory = true;
 
-                if (currInstruction.getRegisterType1() == RT_HL) {
+                if (currInstruction.getRegisterType1() == RT_C) {
                     memoryDestination |= 0xFF00;
                 }
 
@@ -112,7 +120,8 @@ public class CPU {
                 return;
 
             case AM_A8_R:
-                memoryDestination = bus.read(cpuRegisters.getProgramCounter()) | 0xFF00;
+                fetchedData = bus.read(cpuRegisters.getProgramCounter());
+                memoryDestination = fetchedData | 0xFF00;
                 isDestMemory = true;
                 emulator.cycle(1);
                 cpuRegisters.setProgramCounter(cpuRegisters.getProgramCounter() + 1);
@@ -231,9 +240,98 @@ public class CPU {
                 setRegister(currInstruction.getRegisterType1(), fetchedData);
                 break;
 
+            case IN_JR:
+                int rel = this.fetchedData & 0xFF;
+                int address = cpuRegisters.getProgramCounter() + rel;
+                goToAddress(address, false);
+                break;
+
+            case IN_POP:
+                int low = stack.pop();
+                emulator.cycle(1);
+                int high = stack.pop();
+                emulator.cycle(1);
+                setRegister(currInstruction.getRegisterType1(), high | (low << 8));
+
+                if (currInstruction.getRegisterType1() == RT_AF) {
+                    setRegister(currInstruction.getRegisterType1(), ((high << 8) | low) & 0xFF);
+                }
+                break;
+
             case IN_JP:
                 if (checkCondition()) {
                     cpuRegisters.setProgramCounter(fetchedData);
+                    emulator.cycle(1);
+                }
+                break;
+
+            case IN_PUSH:
+                int high2 = (readRegister(currInstruction.getRegisterType1()) >> 8) & 0xFF;
+                emulator.cycle(1);
+                stack.push(high2);
+
+                int low2 = readRegister(currInstruction.getRegisterType1()) & 0xFF;
+                emulator.cycle(1);
+                stack.push(low2);
+
+                emulator.cycle(1);
+                break;
+
+            case IN_RET:
+                if (currInstruction.getConditionType() != CT_NONE) {
+                    emulator.cycle(1);
+                }
+
+                if (checkCondition()) {
+                    int low3 = stack.pop();
+                    emulator.cycle(1);
+                    int high3 = stack.pop();
+                    emulator.cycle(1);
+                    cpuRegisters.setProgramCounter((high3 << 8) | low3);
+
+                    emulator.cycle(1);
+                }
+                break;
+
+            case IN_DEC:
+                if (currInstruction.getAddressMode() == AM_R) {
+                    int val = readRegister(currInstruction.getRegisterType1());
+                    int result = (val - 1) & 0xFF;
+                    int hflag = ((val & 0x0F) == 0) ? 1 : 0;
+                    setRegister(currInstruction.getRegisterType1(), result);
+                    setFlags(result == 0 ? 1 : 0, 1, hflag, -1);
+                } else if (currInstruction.getAddressMode() == AM_MR) {
+                    int addr = readRegister(currInstruction.getRegisterType1());
+                    int val = bus.read(addr);
+                    emulator.cycle(1);
+                    int result = (val - 1) & 0xFF;
+                    bus.write(addr, result);
+                    emulator.cycle(1);
+                    int hflag = ((val & 0x0F) == 0) ? 1 : 0;
+                    setFlags(result == 0 ? 1 : 0, 1, hflag, -1);
+                } else {
+                    System.out.println("Unhandled DEC addressing mode: " + currInstruction.getAddressMode());
+                    System.exit(-7);
+                }
+                break;
+
+            case IN_CALL:
+                goToAddress(fetchedData, true);
+                break;
+
+            case IN_RETI:
+                isInterruptMasterEnabled = true;
+                if (currInstruction.getConditionType() != CT_NONE) {
+                    emulator.cycle(1);
+                }
+
+                if (checkCondition()) {
+                    int low4 = stack.pop();
+                    emulator.cycle(1);
+                    int high4 = stack.pop();
+                    emulator.cycle(1);
+                    cpuRegisters.setProgramCounter((high4 << 8) | low4);
+
                     emulator.cycle(1);
                 }
                 break;
@@ -245,6 +343,7 @@ public class CPU {
                     bus.write(0xFF00 | fetchedData, cpuRegisters.getA());
                 }
                 emulator.cycle(1);
+                break;
 
             case IN_DI:
                 isInterruptMasterEnabled = false;
@@ -253,6 +352,10 @@ public class CPU {
             case IN_XOR:
                 cpuRegisters.setA(cpuRegisters.getA() ^ (fetchedData & 0xFF));
                 setFlags((cpuRegisters.getA() == 0 ? 1 : 0), 0, 0, 0);
+                break;
+
+            case IN_RST:
+                goToAddress(currInstruction.getParam(), true);
                 break;
 
             default:
@@ -385,6 +488,17 @@ public class CPU {
             } else {
                 cpuRegisters.setF(cpuRegisters.getF() & ~(1 << 4));
             }
+        }
+    }
+
+    private void goToAddress(int address, boolean isPushPC) {
+        if (checkCondition()) {
+            if (isPushPC) {
+                emulator.cycle(2);
+                stack.push16(cpuRegisters.getProgramCounter());
+            }
+            cpuRegisters.setProgramCounter(address);
+            emulator.cycle(1);
         }
     }
 
