@@ -15,6 +15,7 @@ public class Emulator {
     private final CPURegisters cpuRegisters = new CPURegisters();
     private final Stack stack = new Stack(bus, cpuRegisters);
     private final CPU cpu = new CPU(bus, this, cpuRegisters, stack);
+    public long ticks;
 
     public void emuRun(String[] args) {
         if (args.length < 2) {
@@ -30,7 +31,7 @@ public class Emulator {
 
         boolean isRunning = true;
         boolean isPaused = false;
-        long ticks = 0;
+        ticks = 0;
 
         while (isRunning) {
             if (isPaused) {
