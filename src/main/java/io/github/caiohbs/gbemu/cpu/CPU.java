@@ -5,6 +5,8 @@ import io.github.caiohbs.gbemu.cpu.mappers.InstructionsByOpcode;
 import io.github.caiohbs.gbemu.emulator.Emulator;
 import io.github.caiohbs.gbemu.memory.Bus;
 
+import java.util.Map;
+
 import static io.github.caiohbs.gbemu.cpu.enums.AddressMode.*;
 import static io.github.caiohbs.gbemu.cpu.enums.ConditionType.*;
 import static io.github.caiohbs.gbemu.cpu.enums.RegisterType.*;
@@ -30,10 +32,6 @@ public class CPU {
         this.emulator = emulator;
         this.cpuRegisters = cpuRegisters;
         this.stack = stack;
-    }
-
-    public CPURegisters getCpuRegisters() {
-        return cpuRegisters;
     }
 
     public void init() {
@@ -130,7 +128,7 @@ public class CPU {
                 return;
 
             case AM_R_R, AM_R:
-                fetchedData = readRegister(currInstruction.getRegisterType1());
+                fetchedData = readRegister(currInstruction.getRegisterType2());
                 return;
 
             case AM_R_D16, AM_D16:
@@ -265,7 +263,7 @@ public class CPU {
                 }
 
                 if (currInstruction.getRegisterType1() == RT_HL && currInstruction.getAddressMode() == AM_MR) {
-                    val2 = bus.read(readRegister(RT_HL) - 1);
+                    val2 = bus.read(readRegister(RT_HL)) - 1;
                     val2 &= 0xFF;
                     bus.write(readRegister(RT_HL), val2);
                 } else {
@@ -277,7 +275,8 @@ public class CPU {
                     return;
                 }
 
-                setFlags(val2 == 0 ? 1 : 0, 0, (val2 & 0x0F) == 0x0F ? 1 : 0, -1);
+                int hc = (readRegister(currInstruction.getRegisterType1()) & 0x0F) == 0 ? 1 : 0;
+                setFlags(val2 == 0 ? 1 : 0, 0, hc, -1);
                 break;
 
             case IN_ADD:
@@ -316,7 +315,7 @@ public class CPU {
                 break;
 
             case IN_JR:
-                int rel = this.fetchedData & 0xFF;
+                byte rel = (byte) this.fetchedData;
                 int address = cpuRegisters.getProgramCounter() + rel;
                 goToAddress(address, false);
                 break;
@@ -406,6 +405,108 @@ public class CPU {
                 }
                 break;
 
+            case IN_CB:
+                int op = fetchedData;
+                RegisterType reg = decodeRegister(op & 0b111);
+                int bit = (op >> 3) & 0b111;
+                int bitOp = (op >> 6) & 0b11;
+                int registerValue = readRegister8(reg);
+
+                emulator.cycle(1);
+
+                if (reg == RT_HL) {
+                    emulator.cycle(2);
+                }
+
+                switch (bitOp) {
+                    case 1:
+                        // BIT
+                        setFlags((registerValue & (1 << bit)) == 0 ? 1 : 0, 0, 1, -1);
+                        return;
+                    case 2:
+                        // RST
+                        registerValue &= ~(1 << bit);
+                        setRegister8(reg, registerValue);
+                        return;
+                    case 3:
+                        // SET
+                        registerValue |= (1 << bit);
+                        setRegister8(reg, registerValue);
+                        return;
+                }
+
+                boolean flagC = (cpuRegisters.getF() & 0x10) != 0;;
+
+                switch (bit) {
+                    case 0:
+                        // RLC
+                        boolean setC = false;
+                        int result = (registerValue << 1) & 0xFF;
+
+                        if ((registerValue & (1 << 7)) != 0) {
+                            result |= 1;
+                            setC = true;
+                        }
+                        setRegister8(reg, result);
+                        setFlags(result == 0 ? 1 : 0, 0, 0, setC ? 1 : 0);
+                        return;
+                    case 1:
+                        // RRC
+                        int oldRRC = registerValue;
+                        registerValue >>= 1;
+                        registerValue |= (oldRRC << 7);
+
+                        setRegister8(reg, registerValue);
+                        setFlags(registerValue == 0 ? 1 : 0, 0, 0, oldRRC & 1);
+                        return;
+                    case 2:
+                        // RL
+                        int oldRL = registerValue;
+                        registerValue <<= 1;
+                        registerValue |= (flagC ? 1 : 0);
+
+                        setRegister8(reg, registerValue);
+                        setFlags(registerValue == 0 ? 1 : 0, 0, 0, (oldRL & 0x80) == 0 ? 1 : 0);
+                        return;
+                    case 3:
+                        // RR
+                        int oldRR = registerValue;
+                        registerValue >>= 1;
+
+                        registerValue |= (flagC ? 1 : 0) << 7;
+
+                        setRegister8(reg, registerValue);
+                        setFlags(registerValue == 0 ? 1 : 0, 0, 0, (oldRR & 0x80) == 0 ? 1 : 0);
+                        return;
+                    case 4:
+                        // SLA
+                        int oldSLA = registerValue;
+                        registerValue <<= 1;
+
+                        setRegister8(reg, registerValue);
+                        setFlags(registerValue == 0 ? 1 : 0, 0, 0, (oldSLA & 0x80) == 0 ? 1 : 0);
+                        return;
+                    case 5:
+                        // SRA
+                        int uSRA = registerValue >> 1;
+                        setRegister8(reg, uSRA);
+                        setFlags(registerValue == 0 ? 1 : 0, 0, 0, (registerValue & 1) == 0 ? 1 : 0);
+                        return;
+                    case 6:
+                        // SWAP
+                        registerValue = (registerValue & 0xF0) >> 4 | (registerValue & 0xF) << 4;
+                        setRegister8(reg, registerValue);
+                        setFlags(registerValue == 0 ? 1 : 0, 0, 0, 0);
+                        return;
+                    case 7:
+                        // SRL
+                        int uSRL = registerValue >> 1;
+                        setRegister8(reg, uSRL);
+                        setFlags(uSRL == 0 ? 1 : 0, 0, 0, (registerValue & 1) == 0 ? 1 : 0);
+                        return;
+                }
+                break;
+
             case IN_CALL:
                 goToAddress(fetchedData, true);
                 break;
@@ -440,9 +541,29 @@ public class CPU {
                 isInterruptMasterEnabled = false;
                 break;
 
+            case IN_AND:
+                cpuRegisters.setA(cpuRegisters.getA() & fetchedData);
+                break;
+
             case IN_XOR:
                 cpuRegisters.setA(cpuRegisters.getA() ^ (fetchedData & 0xFF));
                 setFlags((cpuRegisters.getA() == 0 ? 1 : 0), 0, 0, 0);
+                break;
+
+            case IN_OR:
+                cpuRegisters.setA(cpuRegisters.getA() | (fetchedData & 0xFF));
+                setFlags((cpuRegisters.getA() == 0 ? 1 : 0), 0, 0, 0);
+                break;
+
+            case IN_CP:
+                int n = cpuRegisters.getA() - fetchedData;
+
+                setFlags(
+                        n == 0 ? 1 : 0,
+                        1,
+                        (cpuRegisters.getA() & 0xFF) - (fetchedData & 0xFF) < 0 ? 1 : 0,
+                        n < 0 ? 1 : 0
+                );
                 break;
 
             case IN_RST:
@@ -544,6 +665,63 @@ public class CPU {
             case RT_SP -> cpuRegisters.setStackPointer(value);
             default -> System.out.println("Invalid register type: " + registerType);
         }
+    }
+
+    private int readRegister8(RegisterType rt) {
+        switch (rt) {
+            case RT_A: return cpuRegisters.getA();
+            case RT_F: return cpuRegisters.getF();
+            case RT_B: return cpuRegisters.getB();
+            case RT_C: return cpuRegisters.getC();
+            case RT_D: return cpuRegisters.getD();
+            case RT_E: return cpuRegisters.getE();
+            case RT_H: return cpuRegisters.getH();
+            case RT_L: return cpuRegisters.getL();
+            case RT_HL:
+                return bus.read(readRegister(RT_HL));
+            default:
+                System.out.println("Invalid register8 type: " + rt);
+                System.exit(-7);
+
+        }
+        return 0;
+    }
+
+    private void setRegister8(RegisterType registerType, int value) {
+        switch (registerType) {
+            case RT_A -> cpuRegisters.setA(value & 0xFF);
+            case RT_F -> cpuRegisters.setF(value & 0xFF);
+            case RT_B -> cpuRegisters.setB(value & 0xFF);
+            case RT_C -> cpuRegisters.setC(value & 0xFF);
+            case RT_D -> cpuRegisters.setD(value & 0xFF);
+            case RT_E -> cpuRegisters.setE(value & 0xFF);
+            case RT_H -> cpuRegisters.setH(value & 0xFF);
+            case RT_L -> cpuRegisters.setL(value & 0xFF);
+            case RT_HL -> bus.write(readRegister(RT_HL), value);
+            default -> {
+                System.out.println("Invalid register8 type: " + registerType);
+                System.exit(-7);
+            }
+        }
+    }
+
+    private RegisterType decodeRegister(int reg) {
+        if (reg > 0b111) {
+            return RT_NONE;
+        }
+
+        Map<Integer, RegisterType> REGISTERS = Map.ofEntries(
+                Map.entry(0, RegisterType.RT_B),
+                Map.entry(1, RegisterType.RT_C),
+                Map.entry(2, RegisterType.RT_D),
+                Map.entry(3, RegisterType.RT_E),
+                Map.entry(4, RegisterType.RT_H),
+                Map.entry(5, RegisterType.RT_L),
+                Map.entry(6, RegisterType.RT_HL),
+                Map.entry(7, RegisterType.RT_A)
+        );
+
+        return REGISTERS.get(reg);
     }
 
     private boolean checkCondition() {
