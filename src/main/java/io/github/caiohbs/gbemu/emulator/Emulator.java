@@ -1,9 +1,7 @@
 package io.github.caiohbs.gbemu.emulator;
 
 import io.github.caiohbs.gbemu.cartridge.Cartridge;
-import io.github.caiohbs.gbemu.cpu.CPU;
-import io.github.caiohbs.gbemu.cpu.CPURegisters;
-import io.github.caiohbs.gbemu.cpu.Stack;
+import io.github.caiohbs.gbemu.cpu.*;
 import io.github.caiohbs.gbemu.memory.Bus;
 import io.github.caiohbs.gbemu.memory.RAM;
 
@@ -13,8 +11,13 @@ public class Emulator {
     private final RAM ram = new RAM();
     private final Bus bus = new Bus(cartridge, ram);
     private final CPURegisters cpuRegisters = new CPURegisters();
+    private final CPUState cpuState = new CPUState();
     private final Stack stack = new Stack(bus, cpuRegisters);
-    private final CPU cpu = new CPU(bus, this, cpuRegisters, stack);
+    private final Interrupt interrupt = new Interrupt(bus, cpuRegisters, stack, cpuState);
+    private final CPU cpu = new CPU(bus, this, cpuRegisters, stack, interrupt, cpuState);
+
+    private volatile boolean isRunning = false;
+    private volatile boolean isPaused = false;
     public long ticks;
 
     public void emuRun(String[] args) {
@@ -28,33 +31,53 @@ public class Emulator {
         }
 
         cpu.init();
-
-        boolean isRunning = true;
-        boolean isPaused = false;
+        isRunning = true;
+        isPaused = false;
         ticks = 0;
+
+        Thread cpuThread = new Thread(this::cpuLoop, "gbemu-cpu");
+        cpuThread.start();
 
         while (isRunning) {
             if (isPaused) {
                 delay(1000);
                 continue;
             }
-            if (!cpu.step()) {
-                System.out.println("CPU halted!");
-                System.exit(-3);
-            }
-            ticks++;
+            delay(16);
         }
 
         System.out.println("Goodbye :)");
         System.exit(0);
+    }
 
+    private void cpuLoop() {
+        try {
+        while (isRunning) {
+            if (isPaused) {
+                delay(1000);
+                continue;
+            }
+
+            if (!cpu.step()) {
+                System.out.println("CPU halted!");
+                isRunning = false;
+                return;
+            }
+            ticks++;
+        }
+    } catch (Throwable t) {
+            // TODO: better error handling and/or logging
+            t.printStackTrace();
+        isRunning = false;
+        System.exit(-3);
+    }
     }
 
     public void delay(long ms) {
         try {
             Thread.sleep(ms);
         } catch (InterruptedException e) {
-            e.printStackTrace();
+            Thread.currentThread().interrupt();
         }
     }
 

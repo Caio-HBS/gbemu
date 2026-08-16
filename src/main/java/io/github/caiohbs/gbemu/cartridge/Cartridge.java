@@ -53,10 +53,17 @@ public class Cartridge {
     }
 
     public int read(int address) {
+        address &= 0xFFFF;
+
+        if (address < 0 || address >= romData.length) {
+            return 0;
+        }
+
         return romData[address] & 0xFF;
     }
 
     public void write(int address, int value) {
+        address &= 0xFFFF;
         System.out.printf("CART write(%04X) -> %02X\n", address, value);
     }
 
