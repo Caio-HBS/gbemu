@@ -14,6 +14,8 @@ public class CPURegisters {
     private int programCounter;
     private int stackPointer;
 
+    private int interruptFlags;
+
     public int getA() {
         return a;
     }
@@ -92,6 +94,14 @@ public class CPURegisters {
 
     public void setStackPointer(int stackPointer) {
         this.stackPointer = stackPointer;
+    }
+
+    public int getInterruptFlags() {
+        return interruptFlags;
+    }
+
+    public void setInterruptFlags(int interruptFlags) {
+        this.interruptFlags = interruptFlags;
     }
 
 }

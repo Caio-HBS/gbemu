@@ -28,12 +28,15 @@ public class Bus {
     }
 
     public int read(int address) {
+        address &= 0xFFFF;
+
         if (address < 0x8000) {
             return cartridge.read(address);
         } else if (address < 0xA000) {
             // TODO
             System.out.printf("UNSUPPORTED bus_read(%04X)\n", address);
-            System.exit(-3);
+            //System.exit(-3);
+            return 0;
         } else if (address < 0xC000) {
             return cartridge.read(address);
         } else if (address < 0xE000) {
@@ -44,14 +47,16 @@ public class Bus {
         } else if (address < 0xFEA0) {
             // TODO
             System.out.printf("UNSUPPORTED bus_read(%04X)\n", address);
-            System.exit(-3);
+            return 0;
+            //System.exit(-3);
         } else if (address < 0xFF00) {
             // Unusable (reserved)
             return 0;
         } else if (address < 0xFF80) {
             // TODO
             System.out.printf("UNSUPPORTED bus_read(%04X)\n", address);
-            System.exit(-3);
+            //System.exit(-3);
+            return 0;
         } else if (address == 0xFFFF) {
             // TODO
             return ieRegister;
@@ -61,12 +66,14 @@ public class Bus {
     }
 
     public void write(int address, int value) {
+        address &= 0xFFFF;
+
         if (address < 0x8000) {
             cartridge.write(address, value);
         } else if (address < 0xA000) {
             // TODO
             System.out.printf("UNSUPPORTED bus_write(%04X)\n", address);
-            System.exit(-3);
+            //System.exit(-3);
         } else if (address < 0xC000) {
             cartridge.write(address, value);
         } else if (address < 0xE000) {
@@ -76,7 +83,7 @@ public class Bus {
         } else if (address < 0xFEA0) {
             // TODO
             System.out.printf("UNSUPPORTED bus_write(%04X)\n", address);
-            System.exit(-3);
+            //System.exit(-3);
         } else if (address < 0xFF00) {
             // Unusable (reserved)
         } else if (address < 0xFF80) {
@@ -101,4 +108,11 @@ public class Bus {
         write(address, value & 0xFF);
     }
 
+    public int getIeRegister() {
+        return ieRegister;
+    }
+
+    public void setIeRegister(int ieRegister) {
+        this.ieRegister = ieRegister;
+    }
 }

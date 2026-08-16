@@ -13,13 +13,15 @@ public class Stack {
     }
 
     public void push(int data) {
-        registers.setStackPointer(registers.getStackPointer() - 1);
-        bus.write(registers.getStackPointer(), data & 0xFF);
+        int sp = (registers.getStackPointer() - 1) & 0xFFFF;
+        registers.setStackPointer(sp);
+        bus.write(sp, data & 0xFF);
     }
 
     public int pop() {
-        int val = bus.read(registers.getStackPointer());
-        registers.setStackPointer(registers.getStackPointer() + 1);
+        int sp = registers.getStackPointer() & 0xFFFF;
+        int val = bus.read(sp);
+        registers.setStackPointer((sp + 1) & 0xFFFF);
         return val & 0xFF;
     }
 
