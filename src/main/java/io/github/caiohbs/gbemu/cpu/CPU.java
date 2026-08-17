@@ -200,479 +200,500 @@ public class CPU {
 
     private void execute() {
         switch (currInstruction.getInstructionType()) {
-            case IN_NONE:
-                System.out.println("INVALID INSTRUCTION!");
-                System.exit(-7);
-
-            case IN_NOP:
-                break;
-
-            case IN_LD:
-                if (isDestMemory) {
-                    if (is16Bit(currInstruction.getRegisterType2())) {
-                        emulator.cycle(1);
-                        bus.write16(memoryDestination, fetchedData);
-                    } else {
-                        bus.write(memoryDestination, fetchedData);
-                    }
-                    emulator.cycle(1);
-                    return;
-                }
-                if (currInstruction.getAddressMode() == AM_HL_SPR) {
-                    int hflag = (
-                                        readRegister(currInstruction.getRegisterType2()) & 0xF) + (fetchedData & 0xF
-                                ) >= 0x10 ? 1 : 0;
-                    int cflag = (
-                                        readRegister(currInstruction.getRegisterType2()) & 0xFF) + (fetchedData & 0xFF
-                                ) >= 0x100 ? 1 : 0;
-
-                    setFlags(0, 0, hflag, cflag);
-                    setRegister(
-                            currInstruction.getRegisterType1(),
-                            readRegister(currInstruction.getRegisterType2()) + fetchedData
-                    );
-                    return;
-                }
-
-                setRegister(currInstruction.getRegisterType1(), fetchedData);
-                break;
-
-            case IN_INC:
-                int valINC = readRegister(currInstruction.getRegisterType1()) + 1;
-
-                if (is16Bit(currInstruction.getRegisterType1())) {
-                    emulator.cycle(1);
-                }
-
-                if (currInstruction.getRegisterType1() == RT_HL && currInstruction.getAddressMode() == AM_MR) {
-                    valINC = bus.read(readRegister(RT_HL) + 1);
-                    valINC &= 0xFF;
-                    bus.write(readRegister(RT_HL), valINC);
-                } else {
-                    setRegister(currInstruction.getRegisterType1(), valINC);
-                    valINC = readRegister(currInstruction.getRegisterType1());
-                }
-
-                if ((currOpcode & 0x03) == 0x03) {
-                    return;
-                }
-
-                setFlags(valINC == 0 ? 1 : 0, 0, (valINC & 0x0F) == 0 ? 1 : 0, -1);
-                break;
-
-            case IN_DEC:
-                int valDEC = readRegister(currInstruction.getRegisterType1()) - 1;
-
-                if (is16Bit(currInstruction.getRegisterType1())) {
-                    emulator.cycle(1);
-                }
-
-                if (currInstruction.getRegisterType1() == RT_HL && currInstruction.getAddressMode() == AM_MR) {
-                    valDEC = bus.read(readRegister(RT_HL)) - 1;
-                    valDEC &= 0xFF;
-                    bus.write(readRegister(RT_HL), valDEC);
-                } else {
-                    setRegister(currInstruction.getRegisterType1(), valDEC);
-                    valDEC = readRegister(currInstruction.getRegisterType1());
-                }
-
-                if ((currOpcode & 0x0B) == 0x0B) {
-                    return;
-                }
-
-                int hc = (readRegister(currInstruction.getRegisterType1()) & 0x0F) == 0 ? 1 : 0;
-                setFlags(valDEC == 0 ? 1 : 0, 0, hc, -1);
-                break;
-
-            case IN_RLCA:
-                int uRLCA = cpuRegisters.getA();
-                int cRLCA = ((uRLCA >> 7) & 1) == 0 ? 1 : 0;
-                uRLCA = (uRLCA <<= 1) | cRLCA;
-                cpuRegisters.setA(uRLCA);
-
-                setFlags(0, 0, 0, cRLCA);
-                break;
-
-            case IN_ADD:
-                int valADD = readRegister(currInstruction.getRegisterType1()) + fetchedData;
-                boolean is16 = is16Bit(currInstruction.getRegisterType1());
-
-                if (is16) {
-                    emulator.cycle(1);
-                }
-
-                if (currInstruction.getRegisterType1() == RT_SP) {
-                    valADD = readRegister(currInstruction.getRegisterType1()) + fetchedData;
-                }
-
-                int zADD = (valADD & 0xFF) == 0 ? 1 : 0;
-                int hADD = (readRegister(currInstruction.getRegisterType1()) & 0xF) + (fetchedData & 0xF) >= 0x10 ? 1
-                        : 0;
-                int cADD = (readRegister(currInstruction.getRegisterType1()) + fetchedData) >= 0x100 ? 1 : 0;
-
-                if (is16) {
-                    zADD = -1;
-                    hADD = (readRegister(currInstruction.getRegisterType1()) & 0xFFF) + (fetchedData & 0xFFF)
-                           >= 0x1000 ? 1 : 0;
-                    int n = (readRegister(currInstruction.getRegisterType1())) + (fetchedData) == 0 ? 1 : 0;
-                    cADD = n >= 0x10000 ? 1 : 0;
-                }
-
-                if (currInstruction.getRegisterType1() == RT_SP) {
-                    zADD = 0;
-                    hADD = (readRegister(currInstruction.getRegisterType1()) & 0xF) + (fetchedData & 0xF) >= 0x10 ? 1 : 0;
-                    cADD = (readRegister(currInstruction.getRegisterType1()) & 0xFF) + (fetchedData & 0xFF) > 0x100 ? 1 : 0;
-                }
-
-                setRegister(currInstruction.getRegisterType1(), valADD & 0xFFFF);
-                setFlags(zADD, 0, hADD, cADD);
-
-                break;
-
-            case IN_RRCA:
-                int bRRCA = cpuRegisters.getA() & 1;
-                int newARRCA = cpuRegisters.getA();
-                newARRCA >>= 1;
-                newARRCA |= (bRRCA << 7);
-                cpuRegisters.setA(newARRCA);
-
-                setFlags(0, 0, 0, bRRCA);
-                break;
-
-            case IN_STOP:
-                // TODO: check later if this is correct.
-                System.out.println("STOPPING!");
-                System.exit(-1);
-                break;
-
-            case IN_RLA:
-                int uRLA = cpuRegisters.getA();
-                int cF = (cpuRegisters.getF() & 0x10) != 0 ? 1 : 0;
-                int cRLA = ((uRLA >> 7) & 1) == 0 ? 1 : 0;
-
-                cpuRegisters.setA((uRLA << 1) | cF);
-                setFlags(0, 0, 0, cRLA);
-                break;
-
-            case IN_JR:
-                byte rel = (byte) this.fetchedData;
-                int address = cpuRegisters.getProgramCounter() + rel;
-                goToAddress(address, false);
-                break;
-
-            case IN_RRA:
-                int carry = (cpuRegisters.getF() & 0x10) != 0 ? 1 : 0;
-                int newCARRA = cpuRegisters.getA() & 1;
-
-                int newARRA = cpuRegisters.getA();
-                newARRA >>= 1;
-                newARRA |= (carry << 7);
-                cpuRegisters.setA(newARRA);
-
-                setFlags(0, 0, 0, newCARRA);
-                break;
-
-
-            case IN_DAA:
-                int uDAA = 0;
-                int fC = 0;
-
-                if (((cpuRegisters.getF() & 0x20) != 0) ||
-                        ((cpuRegisters.getF() & 0x40) == 0 && ((cpuRegisters.getA() & 0xF) > 9))) {
-                    uDAA = 6;
-                }
-
-                if (((cpuRegisters.getF() & 0x10) != 0) ||
-                        ((cpuRegisters.getF() & 0x40) == 0 && (cpuRegisters.getA() & 0x99) == 0)) {
-                    uDAA |= 0x60;
-                    fC = 1;
-                }
-
-                int newADAA = cpuRegisters.getA();
-                newADAA += (cpuRegisters.getF() & 0x40) != 0 ? -uDAA : uDAA;
-                cpuRegisters.setA(newADAA);
-
-                setFlags(cpuRegisters.getA() == 0 ? 1 : 0, -1, 0, fC);
-                break;
-
-            case IN_CPL:
-                int aCPL = cpuRegisters.getA();
-                aCPL = ~aCPL;
-                cpuRegisters.setA(aCPL);
-
-                setFlags(-1, 1, 1, -1);
-                break;
-
-            case IN_SCF:
-                setFlags(-1, 0, 0, -1);
-                break;
-
-            case IN_CCF:
-                setFlags(-1, 0, 0, ((cpuRegisters.getF() & 0x10) != 0 ? 1 : 0) ^ 1);
-                break;
-
-            case IN_HALT:
-                cpuState.setHalted(true);
-                break;
-
-            case IN_ADC:
-                cpuRegisters.setA((cpuRegisters.getA() + fetchedData + (cpuRegisters.getF() & 0x10) != 0 ? 1 : 0) & 0xFF);
-                setFlags(
-                        cpuRegisters.getA() == 0 ? 1 : 0,
-                        0,
-                        (cpuRegisters.getA() & 0xF) + (fetchedData & 0xF) + (cpuRegisters.getF() & 0x10) == 0 ? 1 : 0,
-                        (cpuRegisters.getA() + fetchedData + (cpuRegisters.getF() & 0x10)) == 0 ? 1 : 0
-                );
-                break;
-
-            case IN_SUB:
-                int valSUB = readRegister(currInstruction.getRegisterType1()) - fetchedData;
-
-                int zSUB = valSUB == 0 ? 1 : 0;
-                int hSUB = (readRegister(currInstruction.getRegisterType1()) & 0xF) - (fetchedData & 0xF) < 0 ? 1 : 0;
-                int cSUB = (readRegister(currInstruction.getRegisterType1())) - (fetchedData) < 0 ? 1 : 0;
-
-                setRegister(currInstruction.getRegisterType1(), valSUB);
-                setFlags(zSUB, 1, hSUB, cSUB);
-
-                break;
-
-            case IN_SBC:
-                int valSBC = fetchedData + (cpuRegisters.getF() & 0x10) != 0 ? 1 : 0;
-
-                int zSBC = readRegister(currInstruction.getRegisterType1()) - valSBC == 0 ? 1 : 0;
-                int hSBC = (readRegister(currInstruction.getRegisterType1()) & 0xF)
-                           - (fetchedData & 0xF) - ((cpuRegisters.getF() & 0x10)) < 0 ? 1 : 0;
-                int cSBC = (readRegister(currInstruction.getRegisterType1()))
-                         - (fetchedData) - ((cpuRegisters.getF() & 0x10)) < 0 ? 1 : 0;
-
-                setRegister(currInstruction.getRegisterType1(), readRegister(currInstruction.getRegisterType1()) - valSBC);
-                setFlags(zSBC, 1, hSBC, cSBC);
-
-                break;
-
-            case IN_POP:
-                int lowPOP = stack.pop();
-                emulator.cycle(1);
-                int highPOP = stack.pop();
-                emulator.cycle(1);
-
-                int value = (highPOP << 8) | lowPOP;
-                if (currInstruction.getRegisterType1() == RT_AF) {
-                    value &= 0xFFF0;
-                }
-
-                setRegister(currInstruction.getRegisterType1(), value);
-                break;
-
-            case IN_JP:
-                if (checkCondition()) {
-                    cpuRegisters.setProgramCounter(fetchedData);
-                    emulator.cycle(1);
-                }
-                break;
-
-            case IN_PUSH:
-                int highPUSH = (readRegister(currInstruction.getRegisterType1()) >> 8) & 0xFF;
-                emulator.cycle(1);
-                stack.push(highPUSH);
-
-                int lowPUSH = readRegister(currInstruction.getRegisterType1()) & 0xFF;
-                emulator.cycle(1);
-                stack.push(lowPUSH);
-
-                emulator.cycle(1);
-                break;
-
-            case IN_RET:
-                if (currInstruction.getConditionType() != CT_NONE) {
-                    emulator.cycle(1);
-                }
-
-                if (checkCondition()) {
-                    int lowRET = stack.pop();
-                    emulator.cycle(1);
-                    int highRET = stack.pop();
-                    emulator.cycle(1);
-                    cpuRegisters.setProgramCounter((highRET << 8) | lowRET);
-
-                    emulator.cycle(1);
-                }
-                break;
-
-            case IN_CB:
-                int op = fetchedData;
-                RegisterType reg = decodeRegister(op & 0b111);
-                int bit = (op >> 3) & 0b111;
-                int bitOp = (op >> 6) & 0b11;
-                int registerValue = readRegister8(reg);
-
-                emulator.cycle(1);
-
-                if (reg == RT_HL) {
-                    emulator.cycle(2);
-                }
-
-                switch (bitOp) {
-                    case 1:
-                        // BIT
-                        setFlags((registerValue & (1 << bit)) == 0 ? 1 : 0, 0, 1, -1);
-                        return;
-                    case 2:
-                        // RST
-                        registerValue &= ~(1 << bit);
-                        setRegister8(reg, registerValue);
-                        return;
-                    case 3:
-                        // SET
-                        registerValue |= (1 << bit);
-                        setRegister8(reg, registerValue);
-                        return;
-                }
-
-                boolean flagC = (cpuRegisters.getF() & 0x10) != 0;
-
-                switch (bit) {
-                    case 0:
-                        // RLC
-                        boolean setC = false;
-                        int result = (registerValue << 1) & 0xFF;
-
-                        if ((registerValue & (1 << 7)) != 0) {
-                            result |= 1;
-                            setC = true;
-                        }
-                        setRegister8(reg, result);
-                        setFlags(result == 0 ? 1 : 0, 0, 0, setC ? 1 : 0);
-                        return;
-                    case 1:
-                        // RRC
-                        int oldRRC = registerValue;
-                        registerValue >>= 1;
-                        registerValue |= (oldRRC << 7);
-
-                        setRegister8(reg, registerValue);
-                        setFlags(registerValue == 0 ? 1 : 0, 0, 0, oldRRC & 1);
-                        return;
-                    case 2:
-                        // RL
-                        int oldRL = registerValue;
-                        registerValue <<= 1;
-                        registerValue |= (flagC ? 1 : 0);
-
-                        setRegister8(reg, registerValue);
-                        setFlags(registerValue == 0 ? 1 : 0, 0, 0, (oldRL & 0x80) == 0 ? 1 : 0);
-                        return;
-                    case 3:
-                        // RR
-                        int oldRR = registerValue;
-                        registerValue >>= 1;
-
-                        registerValue |= (flagC ? 1 : 0) << 7;
-
-                        setRegister8(reg, registerValue);
-                        setFlags(registerValue == 0 ? 1 : 0, 0, 0, (oldRR & 0x80) == 0 ? 1 : 0);
-                        return;
-                    case 4:
-                        // SLA
-                        int oldSLA = registerValue;
-                        registerValue <<= 1;
-
-                        setRegister8(reg, registerValue);
-                        setFlags(registerValue == 0 ? 1 : 0, 0, 0, (oldSLA & 0x80) == 0 ? 1 : 0);
-                        return;
-                    case 5:
-                        // SRA
-                        int uSRA = registerValue >> 1;
-                        setRegister8(reg, uSRA);
-                        setFlags(registerValue == 0 ? 1 : 0, 0, 0, (registerValue & 1) == 0 ? 1 : 0);
-                        return;
-                    case 6:
-                        // SWAP
-                        registerValue = (registerValue & 0xF0) >> 4 | (registerValue & 0xF) << 4;
-                        setRegister8(reg, registerValue);
-                        setFlags(registerValue == 0 ? 1 : 0, 0, 0, 0);
-                        return;
-                    case 7:
-                        // SRL
-                        int uSRL = registerValue >> 1;
-                        setRegister8(reg, uSRL);
-                        setFlags(uSRL == 0 ? 1 : 0, 0, 0, (registerValue & 1) == 0 ? 1 : 0);
-                        return;
-                }
-                break;
-
-            case IN_CALL:
-                goToAddress(fetchedData, true);
-                break;
-
-            case IN_RETI:
-                cpuState.setInterruptMasterEnabled(true);
-                if (currInstruction.getConditionType() != CT_NONE) {
-                    emulator.cycle(1);
-                }
-
-                if (checkCondition()) {
-                    int lowRETI = stack.pop();
-                    emulator.cycle(1);
-                    int highRETI = stack.pop();
-                    emulator.cycle(1);
-                    cpuRegisters.setProgramCounter((highRETI << 8) | lowRETI);
-
-                    emulator.cycle(1);
-                }
-                break;
-
-            case IN_LDH:
-                if (currInstruction.getRegisterType1() == RT_A) {
-                    setRegister(currInstruction.getRegisterType1(), bus.read(0xFF00 | fetchedData));
-                } else {
-                    bus.write(0xFF00 | fetchedData, cpuRegisters.getA());
-                }
-                emulator.cycle(1);
-                break;
-
-            case IN_DI:
-                cpuState.setInterruptMasterEnabled(false);
-                break;
-
-            case IN_EI:
-                enablingIME = true;
-                break;
-
-            case IN_AND:
-                cpuRegisters.setA(cpuRegisters.getA() & fetchedData);
-                break;
-
-            case IN_XOR:
-                cpuRegisters.setA(cpuRegisters.getA() ^ (fetchedData & 0xFF));
-                setFlags((cpuRegisters.getA() == 0 ? 1 : 0), 0, 0, 0);
-                break;
-
-            case IN_OR:
-                cpuRegisters.setA(cpuRegisters.getA() | (fetchedData & 0xFF));
-                setFlags((cpuRegisters.getA() == 0 ? 1 : 0), 0, 0, 0);
-                break;
-
-            case IN_CP:
-                int n = cpuRegisters.getA() - fetchedData;
-
-                setFlags(
-                        n == 0 ? 1 : 0,
-                        1,
-                        (cpuRegisters.getA() & 0xFF) - (fetchedData & 0xFF) < 0 ? 1 : 0,
-                        n < 0 ? 1 : 0
-                );
-                break;
-
-            case IN_RST:
-                goToAddress(currInstruction.getParam(), true);
-                break;
-
-            default:
+            case IN_NONE -> executeInvalidInstruction();
+            case IN_NOP -> executeNop();
+            case IN_LD -> executeLd();
+            case IN_INC -> executeInc();
+            case IN_DEC -> executeDec();
+            case IN_RLCA -> executeRlca();
+            case IN_ADD -> executeAdd();
+            case IN_RRCA -> executeRrca();
+            case IN_STOP -> executeStop();
+            case IN_RLA -> executeRla();
+            case IN_JR -> executeJr();
+            case IN_RRA -> executeRra();
+            case IN_DAA -> executeDaa();
+            case IN_CPL -> executeCpl();
+            case IN_SCF -> executeScf();
+            case IN_CCF -> executeCcf();
+            case IN_HALT -> executeHalt();
+            case IN_ADC -> executeAdc();
+            case IN_SUB -> executeSub();
+            case IN_SBC -> executeSbc();
+            case IN_POP -> executePop();
+            case IN_JP -> executeJp();
+            case IN_PUSH -> executePush();
+            case IN_RET -> executeRet();
+            case IN_CB -> executeCb();
+            case IN_CALL -> executeCall();
+            case IN_RETI -> executeReti();
+            case IN_LDH -> executeLdh();
+            case IN_DI -> executeDi();
+            case IN_EI -> executeEi();
+            case IN_AND -> executeAnd();
+            case IN_XOR -> executeXor();
+            case IN_OR -> executeOr();
+            case IN_CP -> executeCp();
+            case IN_RST -> executeRst();
+            default -> {
                 System.out.println("Instruction not implemented: " + currInstruction.getInstructionType());
                 System.exit(-7);
+            }
         }
+    }
+
+    private void executeInvalidInstruction() {
+        System.out.println("INVALID INSTRUCTION!");
+        System.exit(-7);
+    }
+
+    private void executeNop() {
+    }
+
+    private void executeLd() {
+        if (isDestMemory) {
+            if (is16Bit(currInstruction.getRegisterType2())) {
+                emulator.cycle(1);
+                bus.write16(memoryDestination, fetchedData);
+            } else {
+                bus.write(memoryDestination, fetchedData);
+            }
+            emulator.cycle(1);
+            return;
+        }
+        if (currInstruction.getAddressMode() == AM_HL_SPR) {
+            int hflag = (
+                                readRegister(currInstruction.getRegisterType2()) & 0xF) + (fetchedData & 0xF
+                        ) >= 0x10 ? 1 : 0;
+            int cflag = (
+                                readRegister(currInstruction.getRegisterType2()) & 0xFF) + (fetchedData & 0xFF
+                        ) >= 0x100 ? 1 : 0;
+
+            setFlags(0, 0, hflag, cflag);
+            setRegister(
+                    currInstruction.getRegisterType1(),
+                    readRegister(currInstruction.getRegisterType2()) + fetchedData
+            );
+            return;
+        }
+
+        setRegister(currInstruction.getRegisterType1(), fetchedData);
+    }
+
+    private void executeInc() {
+        int valINC = readRegister(currInstruction.getRegisterType1()) + 1;
+
+        if (is16Bit(currInstruction.getRegisterType1())) {
+            emulator.cycle(1);
+        }
+
+        if (currInstruction.getRegisterType1() == RT_HL && currInstruction.getAddressMode() == AM_MR) {
+            valINC = bus.read(readRegister(RT_HL) + 1);
+            valINC &= 0xFF;
+            bus.write(readRegister(RT_HL), valINC);
+        } else {
+            setRegister(currInstruction.getRegisterType1(), valINC);
+            valINC = readRegister(currInstruction.getRegisterType1());
+        }
+
+        if ((currOpcode & 0x03) == 0x03) {
+            return;
+        }
+
+        setFlags(valINC == 0 ? 1 : 0, 0, (valINC & 0x0F) == 0 ? 1 : 0, -1);
+    }
+
+    private void executeDec() {
+        int valDEC = readRegister(currInstruction.getRegisterType1()) - 1;
+
+        if (is16Bit(currInstruction.getRegisterType1())) {
+            emulator.cycle(1);
+        }
+
+        if (currInstruction.getRegisterType1() == RT_HL && currInstruction.getAddressMode() == AM_MR) {
+            valDEC = bus.read(readRegister(RT_HL)) - 1;
+            valDEC &= 0xFF;
+            bus.write(readRegister(RT_HL), valDEC);
+        } else {
+            setRegister(currInstruction.getRegisterType1(), valDEC);
+            valDEC = readRegister(currInstruction.getRegisterType1());
+        }
+
+        if ((currOpcode & 0x0B) == 0x0B) {
+            return;
+        }
+
+        int hc = (readRegister(currInstruction.getRegisterType1()) & 0x0F) == 0 ? 1 : 0;
+        setFlags(valDEC == 0 ? 1 : 0, 0, hc, -1);
+    }
+
+    private void executeRlca() {
+        int uRLCA = cpuRegisters.getA();
+        int cRLCA = ((uRLCA >> 7) & 1) == 0 ? 1 : 0;
+        uRLCA = (uRLCA <<= 1) | cRLCA;
+        cpuRegisters.setA(uRLCA);
+
+        setFlags(0, 0, 0, cRLCA);
+    }
+
+    private void executeAdd() {
+        int valADD = readRegister(currInstruction.getRegisterType1()) + fetchedData;
+        boolean is16 = is16Bit(currInstruction.getRegisterType1());
+
+        if (is16) {
+            emulator.cycle(1);
+        }
+
+        if (currInstruction.getRegisterType1() == RT_SP) {
+            valADD = readRegister(currInstruction.getRegisterType1()) + fetchedData;
+        }
+
+        int zADD = (valADD & 0xFF) == 0 ? 1 : 0;
+        int hADD = (readRegister(currInstruction.getRegisterType1()) & 0xF) + (fetchedData & 0xF) >= 0x10 ? 1 : 0;
+        int cADD = (readRegister(currInstruction.getRegisterType1()) + fetchedData) >= 0x100 ? 1 : 0;
+
+        if (is16) {
+            zADD = -1;
+            hADD = (readRegister(currInstruction.getRegisterType1()) & 0xFFF) + (fetchedData & 0xFFF) >= 0x1000 ? 1 : 0;
+            int n = (readRegister(currInstruction.getRegisterType1())) + (fetchedData) == 0 ? 1 : 0;
+            cADD = n >= 0x10000 ? 1 : 0;
+        }
+
+        if (currInstruction.getRegisterType1() == RT_SP) {
+            zADD = 0;
+            hADD = (readRegister(currInstruction.getRegisterType1()) & 0xF) + (fetchedData & 0xF) >= 0x10 ? 1 : 0;
+            cADD = (readRegister(currInstruction.getRegisterType1()) & 0xFF) + (fetchedData & 0xFF) > 0x100 ? 1 : 0;
+        }
+
+        setRegister(currInstruction.getRegisterType1(), valADD & 0xFFFF);
+        setFlags(zADD, 0, hADD, cADD);
+    }
+
+    private void executeRrca() {
+        int bRRCA = cpuRegisters.getA() & 1;
+        int newARRCA = cpuRegisters.getA();
+        newARRCA >>= 1;
+        newARRCA |= (bRRCA << 7);
+        cpuRegisters.setA(newARRCA);
+
+        setFlags(0, 0, 0, bRRCA);
+    }
+
+    private void executeStop() {
+        System.out.println("STOPPING!");
+        System.exit(-1);
+    }
+
+    private void executeRla() {
+        int uRLA = cpuRegisters.getA();
+        int cF = (cpuRegisters.getF() & 0x10) != 0 ? 1 : 0;
+        int cRLA = ((uRLA >> 7) & 1) == 0 ? 1 : 0;
+
+        cpuRegisters.setA((uRLA << 1) | cF);
+        setFlags(0, 0, 0, cRLA);
+    }
+
+    private void executeJr() {
+        byte rel = (byte) this.fetchedData;
+        int address = cpuRegisters.getProgramCounter() + rel;
+        goToAddress(address, false);
+    }
+
+    private void executeRra() {
+        int carry = (cpuRegisters.getF() & 0x10) != 0 ? 1 : 0;
+        int newCARRA = cpuRegisters.getA() & 1;
+
+        int newARRA = cpuRegisters.getA();
+        newARRA >>= 1;
+        newARRA |= (carry << 7);
+        cpuRegisters.setA(newARRA);
+
+        setFlags(0, 0, 0, newCARRA);
+    }
+
+    private void executeDaa() {
+        int uDAA = 0;
+        int fC = 0;
+
+        if (((cpuRegisters.getF() & 0x20) != 0) ||
+                ((cpuRegisters.getF() & 0x40) == 0 && ((cpuRegisters.getA() & 0xF) > 9))) {
+            uDAA = 6;
+        }
+
+        if (((cpuRegisters.getF() & 0x10) != 0) ||
+                ((cpuRegisters.getF() & 0x40) == 0 && (cpuRegisters.getA() & 0x99) == 0)) {
+            uDAA |= 0x60;
+            fC = 1;
+        }
+
+        int newADAA = cpuRegisters.getA();
+        newADAA += (cpuRegisters.getF() & 0x40) != 0 ? -uDAA : uDAA;
+        cpuRegisters.setA(newADAA);
+
+        setFlags(cpuRegisters.getA() == 0 ? 1 : 0, -1, 0, fC);
+    }
+
+    private void executeCpl() {
+        int aCPL = cpuRegisters.getA();
+        aCPL = ~aCPL;
+        cpuRegisters.setA(aCPL);
+
+        setFlags(-1, 1, 1, -1);
+    }
+
+    private void executeScf() {
+        setFlags(-1, 0, 0, -1);
+    }
+
+    private void executeCcf() {
+        setFlags(-1, 0, 0, ((cpuRegisters.getF() & 0x10) != 0 ? 1 : 0) ^ 1);
+    }
+
+    private void executeHalt() {
+        cpuState.setHalted(true);
+    }
+
+    private void executeAdc() {
+        cpuRegisters.setA((cpuRegisters.getA() + fetchedData + (cpuRegisters.getF() & 0x10) != 0 ? 1 : 0) & 0xFF);
+        setFlags(
+                cpuRegisters.getA() == 0 ? 1 : 0,
+                0,
+                (cpuRegisters.getA() & 0xF) + (fetchedData & 0xF) + (cpuRegisters.getF() & 0x10) == 0 ? 1 : 0,
+                (cpuRegisters.getA() + fetchedData + (cpuRegisters.getF() & 0x10)) == 0 ? 1 : 0
+        );
+    }
+
+    private void executeSub() {
+        int valSUB = readRegister(currInstruction.getRegisterType1()) - fetchedData;
+
+        int zSUB = valSUB == 0 ? 1 : 0;
+        int hSUB = (readRegister(currInstruction.getRegisterType1()) & 0xF) - (fetchedData & 0xF) < 0 ? 1 : 0;
+        int cSUB = (readRegister(currInstruction.getRegisterType1())) - (fetchedData) < 0 ? 1 : 0;
+
+        setRegister(currInstruction.getRegisterType1(), valSUB);
+        setFlags(zSUB, 1, hSUB, cSUB);
+    }
+
+    private void executeSbc() {
+        int valSBC = fetchedData + (cpuRegisters.getF() & 0x10) != 0 ? 1 : 0;
+
+        int zSBC = readRegister(currInstruction.getRegisterType1()) - valSBC == 0 ? 1 : 0;
+        int hSBC = (readRegister(currInstruction.getRegisterType1()) & 0xF)
+                   - (fetchedData & 0xF) - ((cpuRegisters.getF() & 0x10)) < 0 ? 1 : 0;
+        int cSBC = (readRegister(currInstruction.getRegisterType1()))
+                 - (fetchedData) - ((cpuRegisters.getF() & 0x10)) < 0 ? 1 : 0;
+
+        setRegister(currInstruction.getRegisterType1(), readRegister(currInstruction.getRegisterType1()) - valSBC);
+        setFlags(zSBC, 1, hSBC, cSBC);
+    }
+
+    private void executePop() {
+        int lowPOP = stack.pop();
+        emulator.cycle(1);
+        int highPOP = stack.pop();
+        emulator.cycle(1);
+
+        int value = (highPOP << 8) | lowPOP;
+        if (currInstruction.getRegisterType1() == RT_AF) {
+            value &= 0xFFF0;
+        }
+
+        setRegister(currInstruction.getRegisterType1(), value);
+    }
+
+    private void executeJp() {
+        if (checkCondition()) {
+            cpuRegisters.setProgramCounter(fetchedData);
+            emulator.cycle(1);
+        }
+    }
+
+    private void executePush() {
+        int highPUSH = (readRegister(currInstruction.getRegisterType1()) >> 8) & 0xFF;
+        emulator.cycle(1);
+        stack.push(highPUSH);
+
+        int lowPUSH = readRegister(currInstruction.getRegisterType1()) & 0xFF;
+        emulator.cycle(1);
+        stack.push(lowPUSH);
+
+        emulator.cycle(1);
+    }
+
+    private void executeRet() {
+        if (currInstruction.getConditionType() != CT_NONE) {
+            emulator.cycle(1);
+        }
+
+        if (checkCondition()) {
+            int lowRET = stack.pop();
+            emulator.cycle(1);
+            int highRET = stack.pop();
+            emulator.cycle(1);
+            cpuRegisters.setProgramCounter((highRET << 8) | lowRET);
+
+            emulator.cycle(1);
+        }
+    }
+
+    private void executeCb() {
+        int op = fetchedData;
+        RegisterType reg = decodeRegister(op & 0b111);
+        int bit = (op >> 3) & 0b111;
+        int bitOp = (op >> 6) & 0b11;
+        int registerValue = readRegister8(reg);
+
+        emulator.cycle(1);
+
+        if (reg == RT_HL) {
+            emulator.cycle(2);
+        }
+
+        switch (bitOp) {
+            case 1:
+                setFlags((registerValue & (1 << bit)) == 0 ? 1 : 0, 0, 1, -1);
+                return;
+            case 2:
+                registerValue &= ~(1 << bit);
+                setRegister8(reg, registerValue);
+                return;
+            case 3:
+                registerValue |= (1 << bit);
+                setRegister8(reg, registerValue);
+                return;
+        }
+
+        boolean flagC = (cpuRegisters.getF() & 0x10) != 0;
+
+        switch (bit) {
+            case 0:
+                boolean setC = false;
+                int result = (registerValue << 1) & 0xFF;
+
+                if ((registerValue & (1 << 7)) != 0) {
+                    result |= 1;
+                    setC = true;
+                }
+                setRegister8(reg, result);
+                setFlags(result == 0 ? 1 : 0, 0, 0, setC ? 1 : 0);
+                return;
+            case 1:
+                int oldRRC = registerValue;
+                registerValue >>= 1;
+                registerValue |= (oldRRC << 7);
+
+                setRegister8(reg, registerValue);
+                setFlags(registerValue == 0 ? 1 : 0, 0, 0, oldRRC & 1);
+                return;
+            case 2:
+                int oldRL = registerValue;
+                registerValue <<= 1;
+                registerValue |= (flagC ? 1 : 0);
+
+                setRegister8(reg, registerValue);
+                setFlags(registerValue == 0 ? 1 : 0, 0, 0, (oldRL & 0x80) == 0 ? 1 : 0);
+                return;
+            case 3:
+                int oldRR = registerValue;
+                registerValue >>= 1;
+
+                registerValue |= (flagC ? 1 : 0) << 7;
+
+                setRegister8(reg, registerValue);
+                setFlags(registerValue == 0 ? 1 : 0, 0, 0, (oldRR & 0x80) == 0 ? 1 : 0);
+                return;
+            case 4:
+                int oldSLA = registerValue;
+                registerValue <<= 1;
+
+                setRegister8(reg, registerValue);
+                setFlags(registerValue == 0 ? 1 : 0, 0, 0, (oldSLA & 0x80) == 0 ? 1 : 0);
+                return;
+            case 5:
+                int uSRA = registerValue >> 1;
+                setRegister8(reg, uSRA);
+                setFlags(registerValue == 0 ? 1 : 0, 0, 0, (registerValue & 1) == 0 ? 1 : 0);
+                return;
+            case 6:
+                registerValue = (registerValue & 0xF0) >> 4 | (registerValue & 0xF) << 4;
+                setRegister8(reg, registerValue);
+                setFlags(registerValue == 0 ? 1 : 0, 0, 0, 0);
+                return;
+            case 7:
+                int uSRL = registerValue >> 1;
+                setRegister8(reg, uSRL);
+                setFlags(uSRL == 0 ? 1 : 0, 0, 0, (registerValue & 1) == 0 ? 1 : 0);
+                return;
+            default:
+                break;
+        }
+    }
+
+    private void executeCall() {
+        goToAddress(fetchedData, true);
+    }
+
+    private void executeReti() {
+        cpuState.setInterruptMasterEnabled(true);
+        if (currInstruction.getConditionType() != CT_NONE) {
+            emulator.cycle(1);
+        }
+
+        if (checkCondition()) {
+            int lowRETI = stack.pop();
+            emulator.cycle(1);
+            int highRETI = stack.pop();
+            emulator.cycle(1);
+            cpuRegisters.setProgramCounter((highRETI << 8) | lowRETI);
+
+            emulator.cycle(1);
+        }
+    }
+
+    private void executeLdh() {
+        if (currInstruction.getRegisterType1() == RT_A) {
+            setRegister(currInstruction.getRegisterType1(), bus.read(0xFF00 | fetchedData));
+        } else {
+            bus.write(0xFF00 | fetchedData, cpuRegisters.getA());
+        }
+        emulator.cycle(1);
+    }
+
+    private void executeDi() {
+        cpuState.setInterruptMasterEnabled(false);
+    }
+
+    private void executeEi() {
+        enablingIME = true;
+    }
+
+    private void executeAnd() {
+        cpuRegisters.setA(cpuRegisters.getA() & fetchedData);
+    }
+
+    private void executeXor() {
+        cpuRegisters.setA(cpuRegisters.getA() ^ (fetchedData & 0xFF));
+        setFlags((cpuRegisters.getA() == 0 ? 1 : 0), 0, 0, 0);
+    }
+
+    private void executeOr() {
+        cpuRegisters.setA(cpuRegisters.getA() | (fetchedData & 0xFF));
+        setFlags((cpuRegisters.getA() == 0 ? 1 : 0), 0, 0, 0);
+    }
+
+    private void executeCp() {
+        int n = cpuRegisters.getA() - fetchedData;
+
+        setFlags(
+                n == 0 ? 1 : 0,
+                1,
+                (cpuRegisters.getA() & 0xFF) - (fetchedData & 0xFF) < 0 ? 1 : 0,
+                n < 0 ? 1 : 0
+        );
+    }
+
+    private void executeRst() {
+        goToAddress(currInstruction.getParam(), true);
     }
 
     public boolean step() {
